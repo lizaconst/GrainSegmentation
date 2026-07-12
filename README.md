@@ -1,4 +1,4 @@
-# WC Grain Segmentation in BSE-SEM Images of WC-Co Cemented Carbides
+# WC Grain Segmentation in SEM Images of WC-Co Cemented Carbides
 
 Automated segmentation and geometric analysis of tungsten carbide (WC)
 grains in backscattered-electron SEM images of WC-Co cemented carbide
