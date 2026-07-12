@@ -1,0 +1,8 @@
+numpy
+opencv-python-headless
+matplotlib
+Pillow
+shapely
+torch
+torchvision
+segment-anything @ git+https://github.com/facebookresearch/segment-anything.git
