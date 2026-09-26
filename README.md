@@ -208,8 +208,7 @@ the final result. Equivalence on the example images is verified by
 
 ## Citation
 
-If you use this code, please cite the software (see `CITATION.cff`,
-Zenodo DOI above) and the accompanying paper (reference will be added
+If you use this code, please cite the software (doi:10.5281/zenodo.22975897, see CITATION.cff) and the accompanying paper the accompanying paper (reference will be added
 upon publication).
 
 ## License
