@@ -1,0 +1,8 @@
+examples/
+out/
+results/
+images/
+analysis/
+logs/
+*.pth
+__pycache__/
