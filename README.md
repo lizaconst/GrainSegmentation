@@ -214,4 +214,4 @@ upon publication).
 
 ## License
 
-Code: MIT — see [LICENSE](LICENSE). Example data on Zenodo: CC BY 4.0.
+Code: MIT — see [LICENSE](LICENSE).
