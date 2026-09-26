@@ -13,7 +13,7 @@ authors:
 version: 1.0.0
 license: MIT
 repository-code: "https://github.com/lizaconst/GrainSegmentation"
-#doi: 
+doi: "10.5281/zenodo.22975897"
 keywords:
   - cemented carbides
   - WC-Co
