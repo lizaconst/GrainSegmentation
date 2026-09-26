@@ -1,0 +1,16 @@
+{
+  "title": "GrainSegmentation: SAM-based segmentation of WC grains in SEM images of WC-Co cemented carbides",
+  "upload_type": "software",
+  "license": "MIT",
+  "creators": [
+    {"name": "Konstantinova, Elizaveta", "affiliation": "HSE University", "orcid": "0000-0001-9191-3267"},
+    {"name": "Shchur, Lev", "affiliation": "HSE University", "orcid": "0000-0002-4191-1324"}
+  ],
+  "keywords": ["cemented carbides", "WC-Co", "grain segmentation",
+               "Segment Anything Model", "SEM", "convex decomposition"],
+  "related_identifiers": [
+    {"identifier": "10.5281/zenodo.22974892", "relation": "isSupplementedBy",
+     "resource_type": "dataset", "scheme": "doi"}
+  ],
+  "description": "Unsupervised segmentation of WC grains in backscattered-electron SEM images of WC-Co cemented carbides: Segment Anything Model (ViT-H, no fine-tuning), label-map resolution of overlapping masks and exhaustive convex decomposition of merged grains guided by a prior on interior angles. Includes grain-descriptor analysis and a reproducibility check against the reference segmentation (example data: https://doi.org/10.5281/zenodo.22974892)."
+}
