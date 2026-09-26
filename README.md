@@ -4,8 +4,8 @@ Automated segmentation and geometric analysis of tungsten carbide (WC)
 grains in backscattered-electron SEM images of WC-Co cemented carbide
 alloys. The pipeline combines the Segment Anything Model (SAM, ViT-H,
 no fine-tuning) with a label-map resolution of overlapping masks and an
-exhaustive convex decomposition of merged grains guided by an empirical
-prior on interior angles.
+exhaustive convex decomposition of merged grains guided by a prior
+distribution of interior angles (`angles.txt`).
 
 Unlike watershed-based approaches, the method requires **no specialized
 sample preparation** (no etching) and works on standard BSE images. It
@@ -54,7 +54,7 @@ least twice the minimal admissible grain area.
 The decomposition is an exhaustive search over k = 1…3 non-crossing
 chords producing k+1 convex parts, memoised over sub-polygons. Among
 valid decompositions with the smallest k, the one maximising the sum of
-log-probabilities of interior angles (empirical distribution in
+log-probabilities of interior angles (prior distribution in
 `angles.txt`) is selected. Anti-oversplit guards on every chord:
 
 * **minimum fragment area** — both parts must be at least
@@ -92,28 +92,13 @@ meaningless; the KS statistic itself is the reportable quantity.
 ```
 pipeline.py            # full segmentation pipeline (one grade per run)
 analyze_results.py     # descriptor statistics, tables and figures
-run_pipeline.sbatch    # SLURM job array (one task per grade)
-angles.txt             # empirical interior-angle distribution (prior)
+compare_reference.py   # checks a run against the reference segmentation
+angles.txt             # prior distribution of interior angles
+configs/               # example config for a custom grade
+run_pipeline.sbatch    # SLURM job array, full data set (one task per grade)
+run_examples.sbatch    # SLURM job: example images + reproducibility check
+paper_version/         # exact two-stage scripts used to produce the paper
 requirements.txt
-```
-
-Expected data layout (not tracked by git):
-
-```
-images/<Grade>/<Grade>/*.jpg    # nested (Dropbox zip) — found first
-images/<Grade>/*.jpg            # flat — fallback
-sam_vit_h_4b8939.pth            # SAM ViT-H checkpoint
-```
-
-Output layout:
-
-```
-results/<Grade>/<stem>_grains.json        # final grain polygons (fine contours)
-results/<Grade>/<stem>_cuts.json          # applied cut chords
-results/<Grade>/<stem>_stats.json         # per-image attrition cascade
-results/<Grade>/<stem>_viz.png            # contours + cuts over the image
-results/<Grade>/<stem>_debug_panel.png    # per-blob decomposition panel
-analysis/                                 # tables, LaTeX bodies, figures
 ```
 
 ## Installation
@@ -122,72 +107,111 @@ analysis/                                 # tables, LaTeX bodies, figures
 conda create -n sam_env python=3.10
 conda activate sam_env
 pip install -r requirements.txt
-```
-
-Notes for headless HPC nodes: use `opencv-python-headless` (already in
-`requirements.txt`) — the regular `opencv-python` requires `libGL.so.1`,
-which is typically absent on compute nodes.
-
-Download the SAM ViT-H checkpoint:
-
-```bash
 wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
 ```
 
-## Usage
+A CUDA GPU is strongly recommended: SAM ViT-H with 150×150 prompt points
+takes minutes per image on a GPU and much longer on a CPU. On headless
+HPC nodes keep `opencv-python-headless` (already in `requirements.txt`);
+the regular `opencv-python` requires `libGL.so.1`.
 
-Single grade, locally or on an interactive node:
+## Quick start: example images
 
-```bash
-python -u pipeline.py --alloy Ultra_Co11
+The example data set (one BSE image per grade plus the reference
+segmentation produced for the paper) is archived on Zenodo:
+**DOI: 10.5281/zenodo.22974892** (license CC BY 4.0). Unpack it into
+`examples/`:
+
+```
+examples/images/<Grade>/<stem>.png
+examples/reference_output/<Grade>/<stem>_resplit.json       # grain polygons
+examples/reference_output/<Grade>/<stem>_resplit_cuts.json  # cut chords
+examples/reference_output/<Grade>/<stem>_resplit_stats.json # attrition cascade
+examples/reference_output/<Grade>/<stem>_resplit_viz.png    # overlay
 ```
 
-All five grades in parallel on a SLURM cluster:
+Run one image and compare with the reference:
 
 ```bash
-sbatch run_pipeline.sbatch
+python -u pipeline.py --alloy Ultra_Co11 \
+    --images examples/images/Ultra_Co11 --out out/Ultra_Co11
+python compare_reference.py --ref examples/reference_output --new out
 ```
 
-The pipeline is resumable: images with an existing `<stem>_stats.json`
-are skipped, so an interrupted job can simply be resubmitted.
+All five grades on a SLURM cluster: `sbatch run_examples.sbatch`.
+`compare_reference.py` reports, per image, the number of grains, the
+median equivalent diameter, the number of identical polygons and the
+share of reference grains matched with IoU ≥ 0.9.
 
-After all grades finish:
+## Running on your own images
+
+Write a grade config (see `configs/example_grade.json`) with the SAM
+parameters, the intensity threshold of the binder phase, the relative
+convexity-defect threshold and the minimal fragment area, then:
 
 ```bash
+python -u pipeline.py --config my_grade.json --images my_images/ --out my_results/
+```
+
+Options: `--checkpoint` (SAM weights), `--angles` (angle prior),
+`--n-images` (default 100), `--no-debug-panel`. See
+`python pipeline.py --help`. The pipeline is resumable: images with an
+existing `<stem>_stats.json` are skipped.
+
+Output per image:
+
+```
+<stem>_grains.json        # final grain polygons (fine contours), pixel coordinates
+<stem>_cuts.json          # applied cut chords
+<stem>_stats.json         # parameters and attrition cascade of the image
+<stem>_viz.png            # contours + cuts over the image
+<stem>_debug_panel.png    # per-blob decomposition panel
+```
+
+## Full data set and descriptor analysis
+
+The full SEM data set belongs to the experimental group and is not
+public. With access to it, place the images in `images/<Grade>/` and run
+
+```bash
+sbatch run_pipeline.sbatch        # or: python -u pipeline.py --alloy <Grade>
 python -u analyze_results.py
 ```
 
-## Configuration
+`analyze_results.py` writes per-grain CSV tables, a per-grade summary,
+LaTeX table bodies and histogram figures to `analysis/`. The pixel scale
+`SCALE_UM_PER_PX` is set at the top of the script (View field / panel
+width from the TESCAN metadata; 0.0499 µm/px for 5.00 kx). The script
+prints the actual image widths and warns if they differ from the
+reference width.
 
-All parameters are hardcoded configuration blocks at the top of each
-script (no CLI options except `--alloy`). Key blocks:
+## Relation to the paper
 
-* `GRADE_CONFIGS` in `pipeline.py` — per-grade SAM parameters,
-  convexity-defect threshold, and minimal fragment area;
-* the `CONFIGURATION` block in `pipeline.py` — DP epsilons, decomposition
-  guards, brightness validation, visualisation switches;
-* `SCALE_UM_PER_PX` in `analyze_results.py` — the pixel scale, computed
-  as View field / panel width from the TESCAN image metadata. The value
-  0.0499 µm/px is confirmed for Ultra_Co11 (View field 76.32 µm, panel
-  width 1530 px, MAG 5.00 kx). The analysis script prints the actual
-  image widths per grade and warns if they differ from the reference —
-  re-check the scale in that case.
+The results in the paper were produced with the two-stage scripts in
+`paper_version/` (`pipeline_hpc_v2.py` → `resplit_postprocess_v2.py` →
+`final_results_analysis_v2.py`, comments in Russian). `pipeline.py`
+merges the two stages into one pass with identical parameters: the
+post-processor reconstructed the pre-split polygons and re-ran the
+decomposition from scratch, so the first-pass split never influenced
+the final result. Equivalence on the example images is verified by
+`compare_reference.py`.
 
 ## Grades
 
-| Grade | Co content, wt% (nominal) |
+| Grade | Built-in config |
 |---|---|
-| Ultra_Co6_2 | 6.2 |
-| Ultra_Co8 | 8 |
-| Ultra_Co11 | 11 |
-| Ultra_Co15 | 15 |
-| Ultra_Co25 | 25 |
+| Ultra_Co6_2 | `--alloy Ultra_Co6_2` |
+| Ultra_Co8 | `--alloy Ultra_Co8` |
+| Ultra_Co11 | `--alloy Ultra_Co11` |
+| Ultra_Co15 | `--alloy Ultra_Co15` |
+| Ultra_Co25 | `--alloy Ultra_Co25` |
 
 ## Citation
 
-If you use this code, please cite the accompanying paper (reference will
-be added upon publication).
+If you use this code, please cite the software (see `CITATION.cff`,
+Zenodo DOI above) and the accompanying paper (reference will be added
+upon publication).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Code: MIT — see [LICENSE](LICENSE). Example data on Zenodo: CC BY 4.0.

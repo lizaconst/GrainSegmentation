@@ -36,7 +36,7 @@ Single-pass pipeline (final version). For every image of a given grade:
     * Exhaustive search over decompositions with k = 1..MAX_CUTS
       non-crossing chords into k+1 convex parts, memoised over
       sub-polygons. Among valid decompositions with the smallest k, the
-      one maximising the log-likelihood of interior angles (empirical
+      one maximising the log-likelihood of interior angles (prior
       angle distribution from ``angles.txt``) is selected.
     * Anti-oversplit guards on every chord:
         - both parts >= MIN_PART_AREA_PX (the splitter cannot create a
@@ -68,19 +68,46 @@ and re-ran the decomposition from scratch, so the first-pass splitting
 never influenced the final result.
 
 Usage:
-    python -u pipeline.py --alloy Ultra_Co11
+    python -u pipeline.py --alloy Ultra_Co11                       # built-in grade
+    python -u pipeline.py --alloy Ultra_Co11 --images examples/images/Ultra_Co11 \
+                          --out out/Ultra_Co11                     # custom paths
+    python -u pipeline.py --config my_grade.json --images my_imgs --out my_out
 or via a SLURM job array (see run_pipeline.sbatch).
 """
 
+import os
 import argparse
+import json as _json
 
-_parser = argparse.ArgumentParser()
-_parser.add_argument("--alloy", required=True,
-                     help="Grade name: Ultra_Co6_2 | Ultra_Co8 | Ultra_Co11 | "
-                          "Ultra_Co15 | Ultra_Co25")
+_parser = argparse.ArgumentParser(
+    description="WC grain segmentation in BSE-SEM images (SAM + convex decomposition).")
+_parser.add_argument("--alloy",
+                     help="Built-in grade config: Ultra_Co6_2 | Ultra_Co8 | Ultra_Co11 | "
+                          "Ultra_Co15 | Ultra_Co25. Also used as the default name of "
+                          "the image and output sub-folders.")
+_parser.add_argument("--config",
+                     help="JSON file with a custom grade config (same keys as an entry "
+                          "of GRADE_CONFIGS). Use this for your own images.")
+_parser.add_argument("--images",
+                     help="Folder with input images (default: ./images/<alloy>).")
+_parser.add_argument("--out",
+                     help="Output folder (default: ./results/<alloy>).")
+_parser.add_argument("--checkpoint", default="./sam_vit_h_4b8939.pth",
+                     help="SAM ViT-H checkpoint (default: ./sam_vit_h_4b8939.pth).")
+_parser.add_argument("--angles", default="./angles.txt",
+                     help="Interior-angle prior (default: ./angles.txt).")
+_parser.add_argument("--n-images", type=int, default=100,
+                     help="Maximum number of images to process (default: 100).")
+_parser.add_argument("--no-debug-panel", action="store_true",
+                     help="Do not write <stem>_debug_panel.png.")
 _args = _parser.parse_args()
 
-ALLOY = _args.alloy
+if _args.alloy is None and _args.config is None:
+    _parser.error("give --alloy (built-in grade) or --config (custom JSON)")
+if _args.config is not None and _args.images is None:
+    _parser.error("--config requires --images")
+
+ALLOY = _args.alloy or os.path.splitext(os.path.basename(_args.config))[0]
 
 # ── per-grade configuration ───────────────────────────────────────────────────
 # sam_params selected by a sweep over the WC-phase coverage metric.
@@ -153,22 +180,30 @@ GRADE_CONFIGS = {
     },
 }
 
-if ALLOY not in GRADE_CONFIGS:
-    raise ValueError(f"Unknown grade '{ALLOY}'. Available: {list(GRADE_CONFIGS)}")
-
-_cfg = GRADE_CONFIGS[ALLOY]
+if _args.config is not None:
+    with open(_args.config) as _f:
+        _cfg = _json.load(_f)
+    for _k in ("sam_params", "intensity_threshold",
+               "convexity_defect_min", "min_part_area_px"):
+        if _k not in _cfg:
+            raise ValueError(f"config {_args.config}: missing key '{_k}'")
+elif ALLOY in GRADE_CONFIGS:
+    _cfg = GRADE_CONFIGS[ALLOY]
+else:
+    raise ValueError(f"Unknown grade '{ALLOY}'. Available: {list(GRADE_CONFIGS)}; "
+                     f"use --config for a custom grade.")
 
 # ===================== CONFIGURATION =====================
 # A Dropbox zip creates a nested folder Ultra_CoXX/Ultra_CoXX/;
 # a flat layout ./images/Ultra_CoXX/ is found as a second fallback.
 IMAGES_FOLDER_NESTED = f"./images/{ALLOY}/{ALLOY}"
 IMAGES_FOLDER_FLAT   = f"./images/{ALLOY}"
-SAVE_FOLDER          = f"./results/{ALLOY}"
+SAVE_FOLDER          = _args.out or f"./results/{ALLOY}"
 
-SAM_CHECKPOINT = "./sam_vit_h_4b8939.pth"
-ANGLES_FILE    = "./angles.txt"
+SAM_CHECKPOINT = _args.checkpoint
+ANGLES_FILE    = _args.angles
 
-N_IMAGES = 100          # max images per grade
+N_IMAGES = _args.n_images   # max images per grade
 
 # contour vectorisation
 EPS_FINE   = 0.005      # DP factor for fine contours (descriptors)
@@ -188,7 +223,7 @@ FLATFIELD_SIGMA_PX = 80     # Gaussian scale of the flat-field correction
 
 # visualisation
 SAVE_VIZ         = True
-SAVE_DEBUG_PANEL = True
+SAVE_DEBUG_PANEL = not _args.no_debug_panel
 MAX_PANELS       = 40       # max blobs on the debug panel
 CUT_COLOR        = "magenta"
 CUT_LINEWIDTH    = 2.0
@@ -230,7 +265,7 @@ def read_txt_to_array(filename, dtype=float):
 
 
 def load_log_p_angles(path):
-    """Load the empirical interior-angle distribution and return log p.
+    """Load the interior-angle prior distribution and return log p.
 
     Zero-probability bins are floored at 1e-3 of the smallest positive
     value (or 1e-12) so that the log-likelihood stays finite.
@@ -468,7 +503,7 @@ def compute_angle(p1, p2, p3):
 
 def compute_log_likelihood(polygon, log_p_angles):
     """Sum of log-probabilities of all interior angles under the
-    empirical angle prior."""
+    interior-angle prior."""
     n = len(polygon)
     return sum(log_p_angles[compute_angle(polygon[i - 1], polygon[i], polygon[(i + 1) % n])]
                for i in range(n))
@@ -811,8 +846,15 @@ def process_image(image_path, sam, log_p_angles, save_folder):
 # ── main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    IMAGES_FOLDER = IMAGES_FOLDER_NESTED if os.path.isdir(IMAGES_FOLDER_NESTED) \
-        else IMAGES_FOLDER_FLAT
+    if _args.images is not None:
+        IMAGES_FOLDER = _args.images
+    else:
+        IMAGES_FOLDER = IMAGES_FOLDER_NESTED if os.path.isdir(IMAGES_FOLDER_NESTED) \
+            else IMAGES_FOLDER_FLAT
+    for _path, _what in ((IMAGES_FOLDER, "image folder"), (SAM_CHECKPOINT, "SAM checkpoint"),
+                         (ANGLES_FILE, "angle prior")):
+        if not os.path.exists(_path):
+            sys.exit(f"Not found: {_what} '{_path}'")
 
     print(f"Grade   : {ALLOY}", flush=True)
     print(f"Images  : {IMAGES_FOLDER}", flush=True)

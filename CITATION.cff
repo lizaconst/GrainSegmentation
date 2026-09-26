@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "GrainSegmentation: SAM-based segmentation of WC grains in BSE-SEM images of WC-Co cemented carbides"
+authors:
+  - family-names: Konstantinova
+    given-names: Elizaveta
+    affiliation: "HSE University, Moscow"
+    orcid: "https://orcid.org/0000-0001-9191-3267"
+  - family-names: Shchur
+    given-names: Lev
+    affiliation: "HSE University, Moscow"
+    orcid: "https://orcid.org/0000-0002-4191-1324"
+version: 1.0.0
+license: MIT
+repository-code: "https://github.com/lizaconst/GrainSegmentation"
+#doi: 
+keywords:
+  - cemented carbides
+  - WC-Co
+  - grain segmentation
+  - Segment Anything Model
+  - SEM
+  - convex decomposition
